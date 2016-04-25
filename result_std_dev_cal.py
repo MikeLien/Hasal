@@ -11,5 +11,7 @@ if __name__ == '__main__':
         time_list = result[test_name]['time_list']
         print "Time list: " + str(time_list)
         print "Std_dev: %f" % np.std(time_list)
+        print "Median time: %f" % result[test_name]['med_time']
+        print "Mean time: %f" % result[test_name]['avg_time']
 
         print '\n'
