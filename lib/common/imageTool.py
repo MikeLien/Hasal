@@ -7,6 +7,7 @@ import argparse
 import shutil
 import numpy as np
 from argparse import ArgumentDefaultsHelpFormatter
+import re
 
 DEFAULT_IMG_DIR_PATH = os.path.join(os.getcwd(), "images")
 DEFAULT_SAMPLE_DIR_PATH = os.path.join(os.getcwd(), "sample")
@@ -24,7 +25,7 @@ class ImageTool(object):
         with open(output_fp, "wb") as fh:
             json.dump(data, fh)
 
-    def convert_video_to_images(self, input_video_fp, output_image_dir_path, output_image_name=None, exec_timestamp_list=[]):
+    def convert_video_to_images(self, input_video_fp, output_image_dir_path, output_image_name=None, exec_timestamp_list=[], comp_mode=0):
         vidcap = cv2.VideoCapture(input_video_fp)
         if hasattr(cv2, 'CAP_PROP_FPS'):
             self.current_fps = vidcap.get(cv2.CAP_PROP_FPS)
@@ -51,8 +52,11 @@ class ImageTool(object):
             os.mkdir(output_image_dir_path)
             while result:
                 str_image_fp = os.path.join(output_image_dir_path, "image_%d.jpg" % img_cnt)
-                if (img_cnt >= self.search_range[0] and img_cnt <= self.search_range[1]) or (img_cnt >= self.search_range[2] and img_cnt <= self.search_range[3]):
+                if comp_mode and img_cnt >= self.search_range[0]:
                     cv2.imwrite(str_image_fp, image)
+                else:
+                    if (img_cnt >= self.search_range[0] and img_cnt <= self.search_range[1]) or (img_cnt >= self.search_range[2] and img_cnt <= self.search_range[3]):
+                        cv2.imwrite(str_image_fp, image)
                 self.image_list.append({"time_seq": vidcap.get(0), "image_fp": str_image_fp})
                 result, image = vidcap.read()
                 img_cnt += 1
@@ -66,7 +70,7 @@ class ImageTool(object):
             self.search_range[3] = len(self.image_list)
         return self.image_list
 
-    def compare_with_sample_image(self, input_sample_dp, exec_timestamp_list):
+    def compare_with_sample_image(self, input_sample_dp):
         result_list = []
         print "Comparing sample file start %s" % time.strftime("%c")
         sample_fn_list = os.listdir(input_sample_dp)
@@ -123,6 +127,82 @@ class ImageTool(object):
         img_dct = np.float32(img_gray)/255.0
         dct_obj = cv2.dct(img_dct)
         return dct_obj
+
+    def atoi(self, text):
+        return int(text) if text.isdigit() else text
+
+    def natural_keys(self, text):
+        return [self.atoi(c) for c in re.split('(\d+)', text)]
+
+    def compare_with_sample_object(self, input_sample_dp):
+        result_list = []
+        m_start_index = 0
+        print "Comparing sample file start %s" % time.strftime("%c")
+        sample_fn_list = os.listdir(input_sample_dp)
+        if len(sample_fn_list) <= 2:
+            return result_list
+        sample_fn_list.sort(key=self.natural_keys)
+        for sample_index in range(0, len(sample_fn_list)):
+            sample_fp = os.path.join(input_sample_dp, sample_fn_list[sample_index])
+            if sample_index == 1:
+                print "Template matching will skip sample 2 comparison"
+            elif sample_index == 0:
+                sample_dct = self.convert_to_dct(sample_fp)
+                for img_index in range(self.search_range[1] - 1, self.search_range[0], -1):
+                    image_data = self.image_list[img_index]
+                    comparing_dct = self.convert_to_dct(image_data['image_fp'])
+                    if self.compare_two_images(sample_dct, comparing_dct):
+                        print "Comparing sample file end %s" % time.strftime("%c")
+                        result_list.append(image_data)
+                        m_start_index = img_index
+                        print m_start_index
+                        break
+            else:
+                min_val = 1.0
+                result_list.append(self.image_list[m_start_index])
+                print m_start_index
+                for img_index in range(m_start_index, self.search_range[3]):
+                    image_data = self.image_list[img_index]
+                    match_val = self.template_match(sample_fp, image_data['image_fp'])
+                    print "Comparing sample file end %s" % time.strftime("%c")
+                    result_list.append(image_data)
+                    if match_val < min_val:
+                        min_val = match_val
+                        result_list[-1] = image_data
+        print result_list
+        return result_list
+
+    def template_match(self, input_sample_fp, template_fp):
+        img = cv2.imread(input_sample_fp)
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        template = cv2.imread(template_fp, 0)
+        # template = cv2.imread('BlankPage.jpg',0)
+        # template = cv2.imread('MainIcon.jpg',0)
+        w, h = template.shape[::-1]
+
+        # All the 6 methods for comparison in a list
+        # methods = ['cv2.TM_CCOEFF', 'cv2.TM_CCOEFF_NORMED', 'cv2.TM_CCORR',
+        #            'cv2.TM_CCORR_NORMED', 'cv2.TM_SQDIFF', 'cv2.TM_SQDIFF_NORMED']
+        methods = 'cv2.TM_SQDIFF_NORMED'
+        method_eval = eval(methods)
+        # Apply template Matching
+        res = cv2.matchTemplate(img_gray, template, method_eval)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        print np.abs(min_val) * 100
+        '''
+        # If the method is TM_SQDIFF or TM_SQDIFF_NORMED, take minimum
+        if method_eval in [cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED]:
+            top_left = min_loc
+        else:
+            top_left = max_loc
+        bottom_right = (top_left[0] + w, top_left[1] + h)
+
+
+        cv2.rectangle(img, top_left, bottom_right, (0, 0, 255), 2)
+        cv2.imshow('original', img)
+        cv2.waitKey(0)
+        '''
+        return min_val
 
 def main():
     arg_parser = argparse.ArgumentParser(description='Image tool',
