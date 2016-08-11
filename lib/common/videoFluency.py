@@ -195,7 +195,7 @@ class VideoFluency(object):
         ======================== *** Not fine-tuned *** ========================
         ======================== *** Need to find suitable method *** ========================
         '''
-        threshold = 0.1
+        threshold = 0.3
         min_dist = 2
         indexes = peakutils.indexes(np.asarray(data), threshold, min_dist)
         return indexes
@@ -211,7 +211,7 @@ class VideoFluency(object):
         '''
         ======================== *** Not fine-tuned *** ========================
         '''
-        distance_threshold = 10
+        distance_threshold = 20
         first_peaks = []
         for i in range(len(path)):
             for j in range(len(first_indexes)):
@@ -235,7 +235,8 @@ class VideoFluency(object):
                 merge_peak.append(first_peaks[i])
                 if i < len(second_peaks) and not second_peaks[i] in first_peaks:
                     merge_peak.append(second_peaks[i])
-        merge_peak.reverse()
+        #merge_peak.reverse()
+        merge_peak.sort()
         return merge_peak
 
     def clustering(self, peaks):
@@ -247,10 +248,15 @@ class VideoFluency(object):
         '''
         ======================== *** Not fine-tuned *** ========================
         '''
+        print "peaks: " + str(peaks)
         cluster_level = 10
         t_distance = [abs((val[0] - val[1])) for val in peaks]
-        cluster_Q = abs(max(t_distance) - min(t_distance)) / cluster_level
-        t_distance_norm = [math.floor(val / cluster_Q) * cluster_Q for val in t_distance]
+        print "t_distance: " + str(t_distance)
+        #cluster_Q = abs(max(t_distance) - min(t_distance)) / cluster_level
+        cluster_Q = 40
+        print "cluster_Q: " + str(cluster_Q)
+        t_distance_norm = [round(float(val) / cluster_Q) * cluster_Q for val in t_distance]
+        print "t_distance_norm: " + str(t_distance_norm)
 
         sequence = []
         v_sequence = []
@@ -261,12 +267,14 @@ class VideoFluency(object):
         mark_distance[0] = cur_label
         for i in range(1, len(mark_distance)):
             if cur_level != t_distance_norm[i]:
+                if cur_level:
+                    v_sequence.append(sequence)
                 cur_level = t_distance_norm[i]
                 cur_label += 1
-                v_sequence.append(sequence)
                 sequence = []
             sequence.append(peaks[i])
             mark_distance[i] = cur_label
+        print mark_distance
 
         v_sequence.append(sequence)
         return v_sequence
@@ -283,16 +291,58 @@ class VideoFluency(object):
         v_duration = []
         for i in range(len(v_sequence)):
             if i == 0:
-                start = max(0, min(v_sequence[i][0]) - 100)
+                #start = max(0, min(v_sequence[i][0]) - 100)
+                start = 0
                 ind_seq1_s = start
                 ind_seq2_s = start
-                ind_seq1_e = v_sequence[i][len(v_sequence[i]) - 1][0] + 1
-                ind_seq2_e = v_sequence[i][len(v_sequence[i]) - 1][1] + 1
+                if (v_sequence[i][len(v_sequence[i]) - 1][0] + 100) >= v_sequence[i+1][0][0]:
+                    ind_seq1_e = v_sequence[i][len(v_sequence[i]) - 1][0] + 1
+                else:
+                    ind_seq1_e = v_sequence[i][len(v_sequence[i]) - 1][0] + 100
+                if (v_sequence[i][len(v_sequence[i]) - 1][1] + 100) >= v_sequence[i+1][0][1]:
+                    ind_seq2_e = v_sequence[i][len(v_sequence[i]) - 1][1] + 1
+                else:
+                    ind_seq2_e = v_sequence[i][len(v_sequence[i]) - 1][1] + 100
+            elif i == (len(v_sequence)-1):
+                '''
+                if (v_sequence[i-1][len(v_sequence[i-1]) - 1][0] + 100) >= v_sequence[i][0][0]:
+                    ind_seq1_s = v_sequence[i - 1][len(v_sequence[i - 1]) - 1][0] + 1
+                else:
+                    ind_seq1_s = v_sequence[i - 1][len(v_sequence[i - 1]) - 1][0] + 100
+                #ind_seq1_s = v_sequence[i-1][len(v_sequence[i-1]) - 1][0] + 100
+                if (v_sequence[i-1][len(v_sequence[i-1]) - 1][1] + 100) >= v_sequence[i][0][1]:
+                    ind_seq2_s = v_sequence[i - 1][len(v_sequence[i - 1]) - 1][1] + 1
+                else:
+                    ind_seq2_s = v_sequence[i - 1][len(v_sequence[i - 1]) - 1][1] + 100
+                #ind_seq2_s = v_sequence[i-1][len(v_sequence[i-1]) - 1][1] + 100
+                '''
+                seq_len = max(v_sequence[i][len(v_sequence[i])-1][0] - v_sequence[i][0][0],
+                              v_sequence[i][len(v_sequence[i])-1][1] - v_sequence[i][0][1]) + 200
+                ind_seq1_s = v_sequence[i][len(v_sequence[i])-1][0] - seq_len
+                ind_seq2_s = v_sequence[i][len(v_sequence[i])-1][0] - seq_len
+
+                ind_seq1_e = v_sequence[i][len(v_sequence[i]) - 1][0] + 100
+                ind_seq2_e = v_sequence[i][len(v_sequence[i]) - 1][1] + 100
             else:
-                ind_seq1_s = ind_seq1_e + 1
-                ind_seq2_s = ind_seq2_e + 1
-                ind_seq1_e = v_sequence[i][len(v_sequence[i]) - 1][0] + 1
-                ind_seq2_e = v_sequence[i][len(v_sequence[i]) - 1][1] + 1
+                #ind_seq1_s = v_sequence[i-1][len(v_sequence[i-1]) - 1][0] + 1
+                if (v_sequence[i-1][len(v_sequence[i-1]) - 1][0] + 100) >= v_sequence[i][0][0]:
+                    ind_seq1_s = v_sequence[i - 1][len(v_sequence[i - 1]) - 1][0] + 1
+                else:
+                    ind_seq1_s = v_sequence[i - 1][len(v_sequence[i - 1]) - 1][0] + 100
+                #ind_seq2_s = v_sequence[i-1][len(v_sequence[i-1]) - 1][1] + 1
+                if (v_sequence[i-1][len(v_sequence[i-1]) - 1][1] + 100) >= v_sequence[i][0][1]:
+                    ind_seq2_s = v_sequence[i - 1][len(v_sequence[i - 1]) - 1][1] + 1
+                else:
+                    ind_seq2_s = v_sequence[i - 1][len(v_sequence[i - 1]) - 1][1] + 100
+
+                if (v_sequence[i][len(v_sequence[i]) - 1][0] + 100) >= v_sequence[i+1][0][0]:
+                    ind_seq1_e = v_sequence[i+1][0][0] - 1
+                else:
+                    ind_seq1_e = v_sequence[i][len(v_sequence[i]) - 1][0] + 100
+                if (v_sequence[i][len(v_sequence[i]) - 1][1] + 100) >= v_sequence[i+1][0][1]:
+                    ind_seq2_e = v_sequence[i+1][0][1] - 1
+                else:
+                    ind_seq2_e = v_sequence[i][len(v_sequence[i]) - 1][1] + 100
             ind_seq1 = (ind_seq1_s, ind_seq1_e)
             ind_seq2 = (ind_seq2_s, ind_seq2_e)
             v_duration.append([ind_seq1, ind_seq2])
@@ -316,23 +366,29 @@ class VideoFluency(object):
         for i in range(len(v_duration)):
             video_fp = os.path.join(output_video_dp, 'Defect_' + str(i+1) + '.avi')
             video_list.append(video_fp)
-            video.open(video_fp, fourcc, 30, (2048, 768), True)
+            video.open(video_fp, fourcc, 90, (2048, 768), True)
             ind_seq1_s = v_duration[i][0][0]
             ind_seq2_s = v_duration[i][1][0]
-            ind_seq1_e = v_duration[i][0][1]
-            ind_seq2_e = v_duration[i][1][1]
-            seq_len1 = v_duration[i][0][1] - v_duration[i][0][0]
-            seq_len2 = v_duration[i][1][1] - v_duration[i][1][0]
+            if v_duration[i][0][1] > (len(first_img_list)-1):
+                ind_seq1_e = len(first_img_list)-1
+            else:
+                ind_seq1_e = v_duration[i][0][1]
+            if v_duration[i][1][1] > (len(second_img_list)-1):
+                ind_seq2_e = len(second_img_list)-1
+            else:
+                ind_seq2_e = v_duration[i][1][1]
+            seq_len1 = v_duration[i][0][1] - v_duration[i][0][0] + 1
+            seq_len2 = v_duration[i][1][1] - v_duration[i][1][0] + 1
             vid_len = max(seq_len1, seq_len2)
             for j in range(vid_len):
-                if j < seq_len1:
-                    img1 = cv2.imread(first_img_list[ind_seq1_s + j])
-                elif j >= seq_len1:
+                if j >= seq_len1 or (ind_seq1_s + j) >= len(first_img_list):
                     img1 = cv2.imread(first_img_list[ind_seq1_e])
-                if j < seq_len2:
-                    img2 = cv2.imread(second_img_list[ind_seq2_s + j])
-                elif j >= seq_len2:
+                elif j < seq_len1:
+                    img1 = cv2.imread(first_img_list[ind_seq1_s + j])
+                if j >= seq_len2 or (ind_seq2_s + j) >= len(second_img_list):
                     img2 = cv2.imread(second_img_list[ind_seq2_e])
+                elif j < seq_len2:
+                    img2 = cv2.imread(second_img_list[ind_seq2_s + j])
                 video.write(np.concatenate((img1, img2), axis=1))
             video.release()
         return video_list
@@ -376,7 +432,9 @@ def main():
                 peak2 = video_fluency_obj.find_peaks(d2norm)
                 m_peak = video_fluency_obj.target_peaks(path, peak1, peak2)
                 v_sequence = video_fluency_obj.clustering(m_peak)
+                print "v_sequence: " + str(v_sequence)
                 v_duration = video_fluency_obj.cluster_duration(v_sequence)
+                print "v_duration: " + str(v_duration)
                 if sim_score < threshold:
                     video_list = video_fluency_obj.cluster_video_out(golden_img_list, input_img_list, v_duration, args.output_video_dp)
                     print video_list
@@ -384,6 +442,21 @@ def main():
                     print "Similarity score of input data sequence greater than or equal to threshold"
             else:
                 print "Please specify output video dir path."
+        else:
+            d1norm = video_fluency_obj.quantization(golden_data)
+            d2norm = video_fluency_obj.quantization(input_data)
+            dtw, distance = video_fluency_obj.dtw(d1norm, d2norm)
+            path = video_fluency_obj.warp_path(dtw)
+            #peak1 = video_fluency_obj.find_peaks(d1norm)
+            #print peak1
+            #peak2 = video_fluency_obj.find_peaks(d2norm)
+            #print peak2
+            #m_peak = video_fluency_obj.target_peaks(path, peak1, peak2)
+            #print m_peak
+            #v_sequence = video_fluency_obj.clustering(m_peak)
+            #v_duration = video_fluency_obj.cluster_duration(v_sequence)
+            video_fluency_obj.dist_plot(dtw,path)
+
 
 if __name__ == '__main__':
     main()

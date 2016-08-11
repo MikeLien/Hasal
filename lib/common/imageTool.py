@@ -25,7 +25,7 @@ class ImageTool(object):
         with open(output_fp, "wb") as fh:
             json.dump(data, fh)
 
-    def convert_video_to_images(self, input_video_fp, output_image_dir_path, output_image_name=None, exec_timestamp_list=[], comp_mode=False):
+    def convert_video_to_images(self, input_video_fp, output_image_dir_path, output_image_name=None, exec_timestamp_list=[], comp_mode=0):
         vidcap = cv2.VideoCapture(input_video_fp)
         if hasattr(cv2, 'CAP_PROP_FPS'):
             self.current_fps = vidcap.get(cv2.CAP_PROP_FPS)

@@ -14,7 +14,7 @@ def run_image_analyze(input_video_fp, output_img_dp, input_sample_dp, exec_times
         img_tool_obj.crop_image(crop_data['target'], crop_data['output'], crop_data['range'])
         return img_tool_obj.compare_with_sample_object(input_sample_dp)
     else:
-        img_tool_obj.convert_video_to_images(input_video_fp, output_img_dp, None, exec_timestamp_list)
+        img_tool_obj.convert_video_to_images(input_video_fp, output_img_dp, None, exec_timestamp_list, comp_mode=2)
         return img_tool_obj.compare_with_sample_image(input_sample_dp)
 
 

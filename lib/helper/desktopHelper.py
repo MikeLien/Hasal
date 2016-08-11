@@ -58,7 +58,8 @@ def lock_window_pos(browser_type):
         if sys.platform == "darwin":
             window_title = "Firefox.app"
         else:
-            window_title = "Mozilla Firefox"
+            #window_title = "Mozilla Firefox"
+            window_title = "Nightly"
 
     else:
         if sys.platform == "darwin":
