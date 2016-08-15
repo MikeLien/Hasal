@@ -99,7 +99,7 @@ class VideoFluency(object):
         '''
         level = 16
         Q = (max(data) - min(data)) / level
-        data_norm = [math.floor(val / Q) * Q for val in data]
+        data_norm = [round(float(val) / Q) * Q for val in data]
         return data_norm
 
     def dtw(self, first_data, second_data):

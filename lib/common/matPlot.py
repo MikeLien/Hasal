@@ -16,13 +16,13 @@ class MatPlot(object):
 
     def subplot_data_peaks(self):
         plt.subplot(211)
-        plt.plot(self.data_norm[0], 'b', label='First Result')
+        plt.plot(self.data_norm[0], 'bo', label='First Result')
         for i in range(len(self.indexes[0])):
             plt.plot(self.indexes[0][i], self.data_norm[0][self.indexes[0][i]], 'o', color='r')
         plt.legend()
 
         plt.subplot(212)
-        plt.plot(self.data_norm[1], 'g', label='Second Result')
+        plt.plot(self.data_norm[1], 'go', label='Second Result')
         for i in range(len(self.indexes[1])):
             plt.plot(self.indexes[1][i], self.data_norm[1][self.indexes[1][i]], 'o', color='r')
         plt.legend()
@@ -34,11 +34,11 @@ class MatPlot(object):
         peak1 = self.video_obj.find_peaks(self.data_norm[0])
         peak2 = self.video_obj.find_peaks(self.data_norm[1])
         m_peak = self.video_obj.target_peaks(path, peak1, peak2)
-        for [map_s, map_f] in m_peak:
-            plt.plot([map_s, map_f], [self.data_norm[0][map_s], self.data_norm[1][map_f]], 'r')
+        for [map_f, map_s] in m_peak:
+            plt.plot([map_f, map_s], [self.data_norm[0][map_f], self.data_norm[1][map_s]], 'r')
 
-        plt.plot(self.data_norm[0], 'bo-', label='First Result')
-        plt.plot(self.data_norm[1], 'g^-', label='Second Result')
+        plt.plot(self.data_norm[0], 'bo', label='First Result')
+        plt.plot(self.data_norm[1], 'g^', label='Second Result')
         plt.axis([-100, max(len(self.data_norm[0]), len(self.data_norm[1]) + 100),
                   min(min(self.data_norm[0]), min(self.data_norm[1])),
                   max(max(self.data_norm[0]), max(self.data_norm[1])) * 1.2])
@@ -49,9 +49,12 @@ class MatPlot(object):
         dtw, distance = self.video_obj.dtw(self.data_norm[0], self.data_norm[1])
         path = self.video_obj.warp_path(dtw)
         for [map_f, map_s] in path:
-            plt.plot([map_f, map_s], [self.f_data[map_f], self.s_data[map_s]], 'r')
-        plt.plot(self.f_data, 'bo-', label='First Result')
-        plt.plot(self.s_data, 'g^-', label='Second Result')
+            plt.plot([map_f, map_s], [self.data_norm[0][map_f], self.data_norm[1][map_s]], 'r')
+        plt.plot(self.data_norm[0], 'bo', label='First Result')
+        plt.plot(self.data_norm[1], 'g^', label='Second Result')
+        plt.axis([-100, max(len(self.data_norm[0]), len(self.data_norm[1]) + 100),
+                  min(min(self.data_norm[0]), min(self.data_norm[1])),
+                  max(max(self.data_norm[0]), max(self.data_norm[1])) * 1.2])
         plt.legend()
         plt.show()
 
@@ -79,14 +82,14 @@ class MatPlot(object):
     @staticmethod
     def plot_two_waveform(f_waveform, s_waveform):
         plt.subplot(211)
-        plt.plot(f_waveform, 'b', label='First Result')
+        plt.plot(f_waveform, 'bo', label='First Result')
         plt.axis([-100, max(len(f_waveform), len(s_waveform) + 100),
                   min(min(f_waveform), min(s_waveform)),
                   max(max(f_waveform), max(s_waveform)) * 1.2])
         plt.legend()
 
         plt.subplot(212)
-        plt.plot(s_waveform, 'g', label='Second Result')
+        plt.plot(s_waveform, 'g^', label='Second Result')
         plt.axis([-100, max(len(f_waveform), len(s_waveform) + 100),
                   min(min(f_waveform), min(s_waveform)),
                   max(max(f_waveform), max(s_waveform)) * 1.2])
