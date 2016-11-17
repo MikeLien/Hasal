@@ -38,8 +38,9 @@ import gc
 import math
 from commonUtil import CommonUtil
 from argparse import ArgumentDefaultsHelpFormatter
-from ..common.logConfig import get_logger
+from lib.common.logConfig import get_logger
 from multiprocessing import Process, Manager
+from ssim import compute_ssim
 logger = get_logger(__name__)
 
 DEFAULT_IMG_DIR_PATH = os.path.join(os.getcwd(), "images")
@@ -130,6 +131,7 @@ class ImageTool(object):
         sample_fp_list = [os.path.join(input_sample_dp, item) for item in sample_fn_list]
         sample_dct_list = [self.convert_to_dct(item) for item in sample_fp_list]
         logger.info("Comparing sample file start %s" % time.strftime("%c"))
+        '''
         start = time.time()
 
         # Execution will be blocked while converting color base if without cv2's setNumThreads attribute
@@ -138,7 +140,7 @@ class ImageTool(object):
             cv2.setNumThreads(0)
             p_list = []
             for index in range(len(sample_dct_list)):
-                args = [self.image_list, not index, sample_dct_list[index], result_list]
+                args = [self.image_list, not index, sample_dct_list[index], result_list, sample_fp_list[index]]
                 p_list.append(Process(target=self.parallel_compare_image, args=args))
                 p_list[index].start()
             for index in range(len(p_list)):
@@ -161,22 +163,107 @@ class ImageTool(object):
                     break
         end = time.time()
         elapsed = end - start
-        logger.debug("Elapsed Time: %s" % str(elapsed))
+        logger.debug("DCT Elapsed Time: %s" % str(elapsed))
         map_result_list = sorted(map(dict, result_list), key=lambda k: k['time_seq'])
         logger.info(map_result_list)
+        '''
+
+        start = time.time()
+        logger.debug("Image comparison from multiprocessing")
+        cv2.setNumThreads(0)
+        p_list = []
+        for index in range(len(sample_dct_list)):
+            args = [self.image_list, not index, sample_dct_list[index], result_list, sample_fp_list[index]]
+            p_list.append(Process(target=self.parallel_compare_image_psnr, args=args))
+            p_list[index].start()
+        for index in range(len(p_list)):
+            p_list[index].join()
+
+        end = time.time()
+        elapsed = end - start
+        logger.debug("PSNR Elapsed Time: %s" % str(elapsed))
+        map_result_list = sorted(map(dict, result_list), key=lambda k: k['time_seq'])
+        logger.info(map_result_list)
+        '''
+        start = time.time()
+        logger.debug("Image comparison from multiprocessing")
+        cv2.setNumThreads(0)
+        p_list = []
+        for index in range(len(sample_dct_list)):
+            args = [self.image_list, not index, sample_dct_list[index], result_list, sample_fp_list[index]]
+            p_list.append(Process(target=self.parallel_compare_image_ssim, args=args))
+            p_list[index].start()
+        for index in range(len(p_list)):
+            p_list[index].join()
+
+        end = time.time()
+        elapsed = end - start
+        logger.debug("SSIM Elapsed Time: %s" % str(elapsed))
+        map_result_list = sorted(map(dict, result_list), key=lambda k: k['time_seq'])
+        logger.info(map_result_list)
+        '''
         return map_result_list
 
-    def parallel_compare_image(self, img_list, asc, sample_dct, result_list):
+    def psnr(self, sample_fp, compare_fp):
+        img_sample = np.array(cv2.imread(sample_fp))
+        img_compare = np.array(cv2.imread(compare_fp))
+        mse = np.mean((img_sample - img_compare) ** 2)
+        if mse == 0:
+            return 100
+        pixel_max = 255.0
+        return 20 * math.log10(pixel_max / math.sqrt(mse))
+
+    def parallel_compare_image_ssim(self, img_list, asc, sample_dct, result_list, sample_fp):
+        ssim_image_data = {}
+        ssim_value = 0
+        if asc:
+            for img_index in range(self.search_range[1] - 1, self.search_range[0], -1):
+                temp_image_data = img_list[img_index]
+                current_ssim = compute_ssim(sample_fp, temp_image_data['image_fp'])
+                if current_ssim > ssim_value:
+                    ssim_value = current_ssim
+                    ssim_image_data = temp_image_data
+        else:
+            for img_index in range(self.search_range[2] - 1, self.search_range[3] - 1):
+                temp_image_data = img_list[img_index]
+                current_ssim = compute_ssim(sample_fp, temp_image_data['image_fp'])
+                if current_ssim > ssim_value:
+                    ssim_value = current_ssim
+                    ssim_image_data = temp_image_data
+        logger.info("Comparing sample file end %s" % time.strftime("%c"))
+        result_list.append(ssim_image_data)
+
+    def parallel_compare_image_psnr(self, img_list, asc, sample_dct, result_list, sample_fp):
+        image_data = {}
+        psnr_value = 0
+        if asc:
+            for img_index in range(self.search_range[1] - 1, self.search_range[0], -1):
+                temp_image_data = img_list[img_index]
+                current_psnr = self.psnr(sample_fp, temp_image_data['image_fp'])
+                if current_psnr > (psnr_value * 1.01):
+                    psnr_value = current_psnr
+                    image_data = temp_image_data
+        else:
+            for img_index in range(self.search_range[2] - 1, self.search_range[3] - 1):
+                temp_image_data = img_list[img_index]
+                current_psnr = self.psnr(sample_fp, temp_image_data['image_fp'])
+                if current_psnr > (psnr_value * 1.01):
+                    psnr_value = current_psnr
+                    image_data = temp_image_data
+        logger.info("Comparing sample file end %s" % time.strftime("%c"))
+        result_list.append(image_data)
+
+    def parallel_compare_image(self, img_list, asc, sample_dct, result_list, sample_fp):
         image_data = {}
         if asc:
             for img_index in range(self.search_range[1] - 1, self.search_range[0], -1):
                 image_data = img_list[img_index]
                 comparing_dct = self.convert_to_dct(image_data['image_fp'])
-                if self.compare_two_images(sample_dct, comparing_dct):
+                if self.compare_two_images(sample_dct, comparing_dct, 0.002):
                     logger.info("Comparing sample file end %s" % time.strftime("%c"))
                     break
         else:
-            for img_index in range(self.search_range[2] - 1, self.search_range[3]):
+            for img_index in range(self.search_range[2] - 1, self.search_range[3] - 1):
                 image_data = img_list[img_index]
                 comparing_dct = self.convert_to_dct(image_data['image_fp'])
                 if self.compare_two_images(sample_dct, comparing_dct):
@@ -184,15 +271,17 @@ class ImageTool(object):
                     break
         result_list.append(image_data)
 
-    def compare_two_images(self, dct_obj_1, dct_obj_2):
+    def compare_two_images(self, dct_obj_1, dct_obj_2, threshold=0.0001):
         match = False
         row1, cols1 = dct_obj_1.shape
         row2, cols2 = dct_obj_2.shape
         if (row1 != row2) or (cols1 != cols2):
             return match
         else:
-            threshold = 0.0001
+            # threshold = 0.0001
             mismatch_rate = np.sum(np.absolute(np.subtract(dct_obj_1, dct_obj_2))) / (row1 * cols1)
+            if threshold != 0.0001 and threshold < mismatch_rate < 0.006:
+                print float(mismatch_rate)
             if mismatch_rate > threshold:
                 return False
             else:
@@ -332,7 +421,7 @@ class ImageTool(object):
         return int(si)
 
     def calculate_perceptual_speed_index(self, progress):
-        from ssim import compute_ssim
+        # from ssim import compute_ssim
         x = len(progress)
         first_paint_frame = progress[1]['image_fp']
         target_frame = progress[x - 1]['image_fp']
