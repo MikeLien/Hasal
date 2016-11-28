@@ -1,0 +1,6 @@
+wait("chrome_urlbar_53.png")
+click(Pattern("chrome_urlbar_53.png").targetOffset(-100, 0))
+paste("https://en.wikipedia.org/wiki/Barack_Obama")
+type(Key.ENTER)
+setAutoWaitTimeout(30)
+wait(Pattern('en_wikipedia_org.png').similar(0.80), 60)

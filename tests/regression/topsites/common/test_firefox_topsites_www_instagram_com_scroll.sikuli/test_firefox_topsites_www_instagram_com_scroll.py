@@ -1,0 +1,6 @@
+wait("ff_urlbar.png")
+click(Pattern("ff_urlbar.png").targetOffset(-100, 0))
+paste("https://www.instagram.com/explore/tags/fashion/")
+type(Key.ENTER)
+setAutoWaitTimeout(30)
+wait(Pattern('www_instagram_com.png').similar(0.80), 60)

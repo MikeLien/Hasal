@@ -1,0 +1,6 @@
+wait("ff_urlbar.png")
+click(Pattern("ff_urlbar.png").targetOffset(-100, 0))
+paste("https://www.google.com/#q=barack+obama")
+type(Key.ENTER)
+setAutoWaitTimeout(30)
+wait(Pattern('www_google_com.png').similar(0.80), 60)

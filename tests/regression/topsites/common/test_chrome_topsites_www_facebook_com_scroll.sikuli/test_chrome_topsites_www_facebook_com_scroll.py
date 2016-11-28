@@ -1,0 +1,6 @@
+wait("chrome_urlbar_53.png")
+click(Pattern("chrome_urlbar_53.png").targetOffset(-100, 0))
+paste("https://www.facebook.com/barackobama")
+type(Key.ENTER)
+setAutoWaitTimeout(30)
+wait(Pattern('www_facebook_com.png').similar(0.80), 60)

@@ -1,0 +1,6 @@
+wait("chrome_urlbar_53.png")
+click(Pattern("chrome_urlbar_53.png").targetOffset(-100, 0))
+paste("https://www.booking.com/")
+type(Key.ENTER)
+setAutoWaitTimeout(30)
+wait(Pattern('www_booking_com.png').similar(0.80), 60)

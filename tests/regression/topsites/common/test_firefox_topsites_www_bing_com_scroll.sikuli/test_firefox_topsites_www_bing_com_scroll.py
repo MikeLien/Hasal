@@ -1,0 +1,6 @@
+wait("ff_urlbar.png")
+click(Pattern("ff_urlbar.png").targetOffset(-100, 0))
+paste("https://www.bing.com/search?q=flowers")
+type(Key.ENTER)
+setAutoWaitTimeout(30)
+wait(Pattern('www_bing_com.png').similar(0.80), 60)
