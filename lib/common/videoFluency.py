@@ -31,7 +31,7 @@ class VideoFluency(object):
         difference = []
         img_list = os.listdir(input_image_dir_path)
         img_list.sort(key=CommonUtil.natural_keys)
-        img_list = [os.path.join(input_image_dir_path, item) for item in img_list]
+        img_list = [os.path.join(input_image_dir_path, item) for item in img_list if item[-3:] == 'jpg' or item[-3:] == '.png']
         img_list_dct = [ImageTool().convert_to_dct(item) for item in img_list]
         for img_index in range(1, len(img_list)):
             # img_list[img_index] = os.path.join(input_image_dir_path, img_list[img_index])
@@ -113,6 +113,10 @@ class VideoFluency(object):
         level = 16
         Q = (max(data) - min(data)) / level
         data_norm = [round(float(val) / Q) * Q for val in data]
+
+        for i in range(len(data_norm)):
+            if data_norm[i] < 0.5:
+                data_norm[i] = 0
         return data_norm
 
     def dtw(self, first_data, second_data):
@@ -424,6 +428,26 @@ class VideoFluency(object):
             video.release()
         return video_list
 
+    def video_generation(self, img_dp, video_fp):
+        if os.path.exists(video_fp):
+            os.remove(video_fp)
+        img_type = ['jpg', 'png']
+        img_list = os.listdir(img_dp)
+        img_list.sort(key=CommonUtil.natural_keys)
+        img = cv2.imread(os.path.join(img_dp, img_list[0]))
+        height, width, channels = img.shape
+        video = cv2.VideoWriter()
+        if hasattr(cv2, 'VideoWriter_fourcc'):
+            fourcc = cv2.VideoWriter_fourcc('X', 'V', 'I', 'D')
+        else:
+            fourcc = cv2.cv.CV_FOURCC(*'XVID')
+        video.open(video_fp, fourcc, 15, (width, height), True)
+
+        for img in img_list:
+            if img[-3:] in img_type:
+                video.write(cv2.imread(os.path.join(img_dp, img)))
+        video.release()
+
     @staticmethod
     def plot_two_waveform(f_waveform, s_waveform):
         plt.subplot(211)
@@ -469,20 +493,26 @@ def main():
                             help='Specify the file path.', required=False)
     arg_parser.add_argument('-o', '--outputdir', action='store', dest='output_video_dp', default=None,
                             help='Specify output image dir path.', required=False)
+    arg_parser.add_argument('-v', '--vout', action='store_true', dest='vout_flag', default=False,
+                            help='Video Out Flag', required=False)
     args = arg_parser.parse_args()
 
     video_fluency_obj = VideoFluency()
-    input_img_dp = args.input_img_dp
-    golden_img_dp = args.golden_img_dp
-    output_video_dp = args.output_video_dp
-    output_fp = os.path.join(output_video_dp, 'video_fluency_measurement.json')
+    if args.input_img_dp:
+        input_img_dp = args.input_img_dp
+    if args.golden_img_dp:
+        golden_img_dp = args.golden_img_dp
+        with open(golden_img_dp) as fh:
+            golden = json.load(fh)
+            golden_data = golden['data']
+        # golden_data, golden_img_list = video_fluency_obj.frame_difference(golden_img_dp)
+    if args.output_video_dp:
+        output_video_dp = args.output_video_dp
+        output_fp = os.path.join(output_video_dp, 'video_fluency_measurement.json')
 
-    with open(golden_img_dp) as fh:
-        golden = json.load(fh)
-        golden_data = golden['data']
-    # golden_data, golden_img_list = video_fluency_obj.frame_difference(golden_img_dp)
-
-    if not args.input_img_dp or not args.golden_img_dp:
+    if args.vout_flag:
+        video_fluency_obj.video_generation(input_img_dp, os.path.basename(input_img_dp) + '.avi')
+    elif not args.input_img_dp or not args.golden_img_dp:
         logger.error("Please specify golden image dir path and input image dir path.")
     else:
         if os.path.exists(output_fp):
@@ -548,7 +578,43 @@ def main():
                 else:
                     logger.error("Please specify output video dir path.")
             else:
-                print input_img_dp
+                # print input_img_dp
+                d1norm = video_fluency_obj.quantization(golden_data)
+                d2norm = video_fluency_obj.quantization(input_data)
+                video_fluency_obj.plot_two_waveform(d1norm, d2norm)
+                last_idx = 0
+                count = 0
+                times = 0
+                latency = []
+                latency_times = [[]]
+                for i in range(len(d1norm)):
+                    if d1norm[i] != 0 and (i - last_idx) > 0:
+                        latency.append(i - last_idx)
+                        last_idx = i
+                print latency
+                target_latency = 0.0
+                for j in range(len(latency)):
+                    if latency[j] < 40:
+                        # target_latency += latency[j]
+                        # count += 1
+                        latency_times[times].append(latency[j])
+                    else:
+                        times += 1
+                        latency_times.append([])
+                # target_latency /= count
+                # print target_latency * (1000 / 90.0)
+                valid_times = 0
+                for i in range(len(latency_times)):
+                    if len(latency_times[i]) == 20:
+                        valid_times += 1
+                        print "%s, %d" % (latency_times[i], len(latency_times[i]))
+                        for item in latency_times[i]:
+                            target_latency += item
+                            count += 1
+                target_latency /= count
+                print valid_times
+                print target_latency * (1000 / 90.0)
+                exit(0)
         latency_list = [item['latency'] for item in result[current_test]['comparison']]
         latency_list.sort()
         non_zero_list = [item for item in latency_list if item != 0]
