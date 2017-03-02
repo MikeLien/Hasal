@@ -5,25 +5,25 @@ import time
 import shutil
 import tempfile
 import numpy as np
+import lib.common.videoFluency as videoFluency
 from collections import Counter
 from ..common.outlier import outlier
 from ..common.logConfig import get_logger
 from ..common.imageTool import ImageTool
 from ..common.commonUtil import CommonUtil
-from ..common.videoFluency import VideoFluency
 from ..common.environment import Environment
 from multiprocessing import Process
 
 logger = get_logger(__name__)
 
 
-def run_image_analyze(input_video_fp, output_img_dp, input_sample_dp, exec_timestamp_list, crop_data=None, fps=0, calc_si=0):
+def run_image_analyze(input_video_fp, output_img_dp, input_sample_dp, exec_timestamp_list, crop_data=None, fps=0, calc_si=0, viewport=None, metric_type='pl'):
     return_result = {}
     if os.path.exists(output_img_dp) is False:
         os.mkdir(output_img_dp)
     img_tool_obj = ImageTool(fps=fps)
     start_time = time.time()
-    img_tool_obj.convert_video_to_images(input_video_fp, output_img_dp, None, exec_timestamp_list)
+    img_tool_obj.convert_video_to_images(input_video_fp, output_img_dp, None, exec_timestamp_list, metric_type)
     last_end = time.time()
     elapsed_time = last_end - start_time
     logger.debug("Convert Video to Image Time Elapsed: [%s]" % elapsed_time)
@@ -32,6 +32,7 @@ def run_image_analyze(input_video_fp, output_img_dp, input_sample_dp, exec_times
         return_result['running_time_result'] = img_tool_obj.compare_with_sample_object(input_sample_dp)
     else:
         sample_fp_list = img_tool_obj.get_sample_img_list(input_sample_dp)
+        # if not viewport:
         viewport = img_tool_obj.find_image_viewport(sample_fp_list[0])
         tab_view = img_tool_obj.find_tab_view(sample_fp_list[0], viewport)
         browser_view = img_tool_obj.find_browser_view(viewport, tab_view)
@@ -54,7 +55,7 @@ def run_image_analyze(input_video_fp, output_img_dp, input_sample_dp, exec_times
         logger.debug("Crop All Regions Elapsed: [%s]" % elapsed_time)
         last_end = current_time
 
-        return_result['running_time_result'] = img_tool_obj.compare_with_sample_image_multi_process(input_sample_dp)
+        return_result['running_time_result'] = img_tool_obj.compare_with_sample_image_multi_process(input_sample_dp, metric_type)
         end_time = time.time()
         elapsed_time = end_time - last_end
         logger.debug("Compare Image Time Elapsed: [%s]" % elapsed_time)
@@ -208,36 +209,74 @@ def output_video(result_data, video_fp):
     shutil.rmtree(tempdir)
 
 
-def output_waveform_info(result_data, waveform_fp, img_dp, video_fp):
+def output_waveform_info(result_data, waveform_fp, img_dp, video_fp, metric_type):
     waveform_info = dict()
     waveform_info['video'] = video_fp
     current_run_result = result_data['running_time_result']
     if len(current_run_result) == 2:
-        video_fluency_obj = VideoFluency()
+        img_dp = os.path.join(img_dp, "viewport")
         img_list = os.listdir(img_dp)
         img_list.sort(key=CommonUtil.natural_keys)
-        start_fn = os.path.basename(current_run_result[0]['image_fp'])
+        start_fn = os.path.basename(current_run_result[0]['start'])
         start_index = img_list.index(start_fn)
-        end_fn = os.path.basename(current_run_result[1]['image_fp'])
+        end_fn = os.path.basename(current_run_result[1]['end'])
         end_index = img_list.index(end_fn)
         for img_index in range(len(img_list)):
             img_list[img_index] = os.path.join(img_dp, img_list[img_index])
             if img_index < start_index or img_index > end_index:
                 os.remove(img_list[img_index])
-        waveform_info['data'], waveform_info['img_list'] = video_fluency_obj.frame_difference(img_dp)
+        waveform_info['data'], waveform_info['img_list'] = videoFluency.get_frame_difference(img_dp)
         with open(waveform_fp, "wb") as fh:
             json.dump(waveform_info, fh, indent=2)
 
+        if metric_type == 'ail':
+            data_norm = videoFluency.quantizer(waveform_info['data'])
+            get_latency(data_norm)
 
-def result_calculation(env, exec_timestamp_list, crop_data=None, calc_si=0, waveform=0, revision="", pkg_platform="", suite_upload_dp=""):
+
+def get_latency(data_norm):
+    last_idx = 0
+    count = 0
+    times = 0
+    latency = []
+    latency_times = [[]]
+    for i in range(len(data_norm)):
+        if data_norm[i] != 0 and (i - last_idx) > 0:
+            latency.append(i - last_idx)
+            last_idx = i
+    logger.debug("latency: %s" % latency)
+    target_latency = 0.0
+    for j in range(len(latency)):
+        if latency[j] < 40:
+            latency_times[times].append(latency[j])
+        else:
+            times += 1
+            latency_times.append([])
+    valid_times = 0
+    for i in range(len(latency_times)):
+        if len(latency_times[i]) == 20:
+            valid_times += 1
+            logger.debug("%s, %d" % (latency_times[i], len(latency_times[i])))
+            for item in latency_times[i]:
+                target_latency += item
+                count += 1
+        else:
+            logger.debug("%s, %d" % (latency_times[i], len(latency_times[i])))
+    target_latency /= count
+    logger.debug("valid times: %d" % valid_times)
+    logger.debug("latency of each frame: %f" % (1000.0 / Environment.DEFAULT_VIDEO_RECORDING_FPS))
+
+
+def result_calculation(env, exec_timestamp_list, crop_data=None, calc_si=0, waveform=0, revision="", pkg_platform="", suite_upload_dp="", viewport=None):
     fps_stat = "1"
+    metric_type = 'ail'
     if os.path.exists(env.video_output_fp):
         fps_stat, fps = fps_cal(env.recording_log_fp, env.DEFAULT_VIDEO_RECORDING_FPS)
         if int(fps_stat):
             result_data = None
             logger.warning('Real FPS cannot reach default setting, ignore current result!, current FPS:[%s], default FPS:[%s]' % (str(fps), str(env.DEFAULT_VIDEO_RECORDING_FPS)))
         else:
-            result_data = run_image_analyze(env.video_output_fp, env.img_output_dp, env.img_sample_dp, exec_timestamp_list, crop_data, fps, calc_si)
+            result_data = run_image_analyze(env.video_output_fp, env.img_output_dp, env.img_sample_dp, exec_timestamp_list, crop_data, fps, calc_si, viewport, metric_type)
     else:
         result_data = None
 
@@ -256,7 +295,7 @@ def result_calculation(env, exec_timestamp_list, crop_data=None, calc_si=0, wave
         elapsed_time = current_time - start_time
         logger.debug("Generate Video Elapsed: [%s]" % elapsed_time)
         if waveform == 1:
-            output_waveform_info(result_data, env.waveform_fp, env.img_output_dp, env.video_output_fp)
+            output_waveform_info(result_data, env.waveform_fp, env.img_output_dp, env.video_output_fp, metric_type)
 
         upload_case_name = "_".join(env.output_name.split("_")[2:-1])
         upload_case_dp = os.path.join(suite_upload_dp, upload_case_name)

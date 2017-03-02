@@ -10,6 +10,7 @@ import lib.helper.videoHelper as videoHelper
 from common.environment import Environment
 from helper.profilerHelper import Profilers
 from common.logConfig import get_logger
+from common.imageTool import ImageTool
 
 logger = get_logger(__name__)
 
@@ -21,6 +22,7 @@ class PerfBaseTest(unittest.TestCase):
 
         # Init environment variables
         self.env = Environment(self._testMethodName, self._testMethodDoc)
+        self.viewport = None
 
     def set_profiler_path(self):
         for name in self.env.firefox_settings_extensions:
@@ -138,7 +140,9 @@ class PerfBaseTest(unittest.TestCase):
             if self.env.firefox_settings_extensions[self.env.PROFILER_FLAG_AVCONV]['enable'] is True:
                 videoHelper.capture_screen(self.env, self.env.video_output_sample_1_fp, self.env.img_sample_dp,
                                            self.env.img_output_sample_1_fn)
-        time.sleep(2)
+        time.sleep(3)
+        img_sample_fp = os.path.join(self.env.img_sample_dp, self.env.img_output_sample_1_fn)
+        self.viewport = ImageTool().find_image_viewport(img_sample_fp)
 
         # Record timestamp t2
         self.exec_timestamp_list.append(time.time())
@@ -151,7 +155,7 @@ class PerfBaseTest(unittest.TestCase):
         # capture 2nd snapshot
         time.sleep(5)
 
-        if self.env.PROFILER_FLAG_AVCONV in self.env.firefox_settings_extensions:
+        if not int(os.getenv("ENABLE_WAVEFORM")) and self.env.PROFILER_FLAG_AVCONV in self.env.firefox_settings_extensions:
             if self.env.firefox_settings_extensions[self.env.PROFILER_FLAG_AVCONV]['enable'] is True:
                 videoHelper.capture_screen(self.env, self.env.video_output_sample_2_fp, self.env.img_sample_dp,
                                            self.env.img_output_sample_2_fn)
@@ -186,12 +190,13 @@ class PerfBaseTest(unittest.TestCase):
                 resultHelper.result_calculation(self.env, self.exec_timestamp_list, self.crop_data,
                                                 int(os.getenv("CALC_SI")), int(os.getenv("ENABLE_WAVEFORM")),
                                                 os.getenv("PERFHERDER_REVISION"), os.getenv("PERFHERDER_PKG_PLATFORM"),
-                                                os.getenv("SUITE_UPLOAD_DP"))
+                                                os.getenv("SUITE_UPLOAD_DP"), self.viewport)
             else:
                 resultHelper.result_calculation(self.env, self.exec_timestamp_list, calc_si=int(os.getenv("CALC_SI")),
                                                 waveform=int(os.getenv("ENABLE_WAVEFORM")),
                                                 revision=os.getenv("PERFHERDER_REVISION"),
                                                 pkg_platform=os.getenv("PERFHERDER_PKG_PLATFORM"),
-                                                suite_upload_dp=os.getenv("SUITE_UPLOAD_DP"))
+                                                suite_upload_dp=os.getenv("SUITE_UPLOAD_DP"),
+                                                viewport=self.viewport)
         else:
             logger.warning("This running result of sikuli execution is not successful, return code: " + str(self.sikuli_status))

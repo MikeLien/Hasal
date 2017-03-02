@@ -39,7 +39,7 @@ class Environment(object):
         DEFAULT_VIEWPORT_WIDTH = 800
         DEFAULT_VIEWPORT_HEIGHT = 600
     else:
-        DEFAULT_VIDEO_RECORDING_FPS = 50
+        DEFAULT_VIDEO_RECORDING_FPS = 90
         DEFAULT_VIEWPORT_WIDTH = 1024
         DEFAULT_VIEWPORT_HEIGHT = 768
     DEFAULT_VIDEO_RECORDING_POS_X = 72
@@ -52,11 +52,9 @@ class Environment(object):
     SEARCH_TARGET_TAB_VIEW = 'tab_view'
     SEARCH_TARGET_BROWSER = 'browser'
     # event points need to follow the order of appearing time from searching
-    BROWSER_VISUAL_EVENT_POINTS = {'backward_search': [{'event': 'first_paint', 'search_target': SEARCH_TARGET_VIEWPORT},
-                                                       {'event': 'start', 'search_target': SEARCH_TARGET_TAB_VIEW}],
-                                   'forward_search': [
-                                       {'event': 'viewport_visual_complete', 'search_target': SEARCH_TARGET_VIEWPORT},
-                                       {'event': 'end', 'search_target': SEARCH_TARGET_BROWSER}]}
+    BROWSER_VISUAL_EVENT_POINTS = {
+        'backward_search': [{'event': 'start', 'search_target': SEARCH_TARGET_VIEWPORT}],
+        'forward_search': [{'event': 'end', 'search_target': SEARCH_TARGET_VIEWPORT}]}
 
     DEFAULT_TEST_TARGET_FOLDER_URI = "0B6LePZQnd-uOTHhJNEhTN1pqYm8"
     GSHEET_TEST_TARGET_FOLDER_URI = "0B6LePZQnd-uOdkNVTkItaG96WkU"

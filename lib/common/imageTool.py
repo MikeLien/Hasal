@@ -47,9 +47,10 @@ import threading
 from PIL import Image
 from commonUtil import CommonUtil
 from argparse import ArgumentDefaultsHelpFormatter
-from ..common.logConfig import get_logger
-from ..common.environment import Environment
+from lib.common.logConfig import get_logger
+from lib.common.environment import Environment
 from multiprocessing import Process, Manager
+from ssim import compute_ssim
 
 logger = get_logger(__name__)
 
@@ -82,7 +83,7 @@ class ImageTool(object):
         except Exception as e:
             logger.error(e)
 
-    def convert_video_to_images(self, input_video_fp, output_image_dir_path, output_image_name=None, exec_timestamp_list=[]):
+    def convert_video_to_images(self, input_video_fp, output_image_dir_path, output_image_name=None, exec_timestamp_list=[], metric_type='pl'):
         """
         Convert video to images.
         @param input_video_fp: input video path
@@ -125,13 +126,22 @@ class ImageTool(object):
             # search range: [head_start, head_end, tail_start, tail_end]
             ref_start_point = exec_timestamp_list[1] - exec_timestamp_list[0]
             ref_end_point = exec_timestamp_list[2] - exec_timestamp_list[0]
-            self.search_range = [
-                # For finding the beginning, the range cannot start less than zero.
-                max(int((ref_start_point - 10) * self.current_fps), 0),
-                int((ref_start_point + 10) * self.current_fps),
-                # For finding the end, the range cannot start less than zero.
-                max(int((ref_end_point - 10) * self.current_fps), 0),
-                int((ref_end_point + 10) * self.current_fps)]
+            if metric_type == 'pl':
+                self.search_range = [
+                    # For finding the beginning, the range cannot start less than zero.
+                    max(int((ref_start_point - 10) * self.current_fps), 0),
+                    int((ref_start_point + 10) * self.current_fps),
+                    # For finding the end, the range cannot start less than zero.
+                    max(int((ref_end_point - 10) * self.current_fps), 0),
+                    int((ref_end_point + 10) * self.current_fps)]
+            elif metric_type == 'ail':
+                self.search_range = [
+                    # For finding the beginning, the range cannot start less than zero.
+                    max(int((ref_start_point + 10) * self.current_fps), 0),
+                    int((ref_start_point + 30) * self.current_fps),
+                    # For finding the end, the range cannot start less than zero.
+                    max(int((ref_end_point - 10) * self.current_fps), 0),
+                    int((ref_end_point + 10) * self.current_fps)]
         # Only for convert ONE image.
         if output_image_name:
             if os.path.exists(output_image_dir_path) is False:
@@ -283,16 +293,52 @@ class ImageTool(object):
                             sample_dct_list.update({event_name: self.convert_to_dct(sample_fp_list[1])})
         return sample_dct_list
 
-    def compare_with_sample_image_multi_process(self, input_sample_dp):
+    def get_compared_sample_list(self, input_sample_dp, metric_type='pl'):
+        """
+        Return the compared sample list from input sample folder.
+        Return empty list when there are less than two sample files.
+        @param input_sample_dp: input sample folder path
+        @param metric_type: metric type for calculation
+        @return: compared sample list
+        """
+        sample_fp_list = self.get_sample_img_list(input_sample_dp)
+        compared_sample_list = dict()
+        # To generate dct list when number of sample files is 2, otherwise return empty list
+        if len(sample_fp_list) == 2:
+            event_points = Environment.BROWSER_VISUAL_EVENT_POINTS
+            for search_direction in event_points:
+                for event_point in event_points[search_direction]:
+                    event_name = event_point['event']
+                    search_target = event_point['search_target']
+                    dir_path = os.path.join(input_sample_dp, search_target)
+                    if os.path.exists(dir_path):
+                        sample_fp_list = self.get_sample_img_list(dir_path)
+                        if metric_type == 'pl':
+                            if event_name == 'first_paint':
+                                compared_sample_list.update({event_name: self.convert_to_dct(sample_fp_list[0], self.skip_status_bar_fraction)})
+                            elif event_name == 'start':
+                                compared_sample_list.update({event_name: self.convert_to_dct(sample_fp_list[0])})
+                            elif event_name == 'viewport_visual_complete' or event_name == 'end':
+                                compared_sample_list.update({event_name: self.convert_to_dct(sample_fp_list[1])})
+                        elif metric_type == 'ail':
+                            if event_name == 'start':
+                                compared_sample_list.update({event_name: sample_fp_list[0]})
+                            elif event_name == 'end':
+                                compared_sample_list.update({event_name: sample_fp_list[1]})
+        return compared_sample_list
+
+    def compare_with_sample_image_multi_process(self, input_sample_dp, metric_type):
         """
         Compare sample images, return matching list.
         @param input_sample_dp: input sample folder path
+        @param metric_type: metric type for calculation
         @return: the matching result list
         """
         manager = Manager()
         result_list = manager.list()
-        sample_dct_list = self.get_sample_dct_list(input_sample_dp)
-        if not sample_dct_list:
+        # sample_dct_list = self.get_sample_dct_list(input_sample_dp)
+        compared_sample_list = self.get_compared_sample_list(input_sample_dp, metric_type)
+        if not compared_sample_list:
             return map(dict, result_list)
         logger.info("Comparing sample file start %s" % time.strftime("%c"))
         start = time.time()
@@ -300,7 +346,7 @@ class ImageTool(object):
         logger.debug("Image comparison from multiprocessing")
         p_list = []
         for search_direction in event_points.keys():
-            args = [search_direction, sample_dct_list, result_list]
+            args = [search_direction, compared_sample_list, result_list, metric_type]
             p_list.append(Process(target=self.parallel_compare_image, args=args))
             p_list[-1].start()
         for p in p_list:
@@ -327,7 +373,7 @@ class ImageTool(object):
         del event_data['image_fp']
         return event_data
 
-    def sequential_compare_image(self, start_index, end_index, total_search_range, event_points, sample_dct_list, result_list):
+    def sequential_compare_image(self, start_index, end_index, total_search_range, event_points, sample_dct_list, result_list, metric_type):
         search_count = 0
         img_index = start_index
         if end_index > start_index:
@@ -342,59 +388,88 @@ class ImageTool(object):
                 skip_status_bar_fraction = self.skip_status_bar_fraction
             else:
                 skip_status_bar_fraction = 1.0
-            while search_count < total_search_range:
-                if forward_search and img_index > end_index:
-                    break
-                elif not forward_search and img_index < end_index:
-                    break
-                search_count += 1
-                if self.search_and_compare_image(sample_dct, img_index, search_target, skip_status_bar_fraction):
-                    if img_index == start_index:
-                        logger.debug(
-                            "Find matched file in boundary of search range, event point might out of search range.")
-                        if forward_search:
-                            # if start index is already at boundary then break
-                            if start_index == self.search_range[0]:
-                                break
-                            start_index = max(img_index - total_search_range / 2, self.search_range[0])
-                        else:
-                            # if start index is already at boundary then break
-                            if start_index == self.search_range[3] - 1:
-                                break
-                            start_index = min(img_index + total_search_range / 2, self.search_range[3] - 1)
-                        img_index = start_index
-                    else:
-                        event_data = self.get_event_data(img_index, event_name)
-                        result_list.append(event_data)
-                        logger.debug("Comparing %s point end %s" % (event_name, time.strftime("%c")))
-                        # shift one index to avoid boundary matching two events at the same time
-                        if forward_search:
-                            start_index = img_index - 1
-                            end_index = min(self.search_range[3] - 1, start_index + total_search_range)
-                        else:
-                            start_index = img_index + 1
-                            end_index = max(self.search_range[0], start_index - total_search_range)
-                        search_count = 0
+            if metric_type == 'pl':
+                while search_count < total_search_range:
+                    if forward_search and img_index > end_index:
                         break
-                else:
-                    if forward_search:
-                        img_index += 1
+                    elif not forward_search and img_index < end_index:
+                        break
+                    search_count += 1
+                    if self.search_and_compare_image(sample_dct, img_index, search_target, skip_status_bar_fraction):
+                        if img_index == start_index:
+                            logger.debug(
+                                "Find matched file in boundary of search range, event point might out of search range.")
+                            if forward_search:
+                                # if start index is already at boundary then break
+                                if start_index == self.search_range[0]:
+                                    break
+                                start_index = max(img_index - total_search_range / 2, self.search_range[0])
+                            else:
+                                # if start index is already at boundary then break
+                                if start_index == self.search_range[3] - 1:
+                                    break
+                                start_index = min(img_index + total_search_range / 2, self.search_range[3] - 1)
+                            img_index = start_index
+                        else:
+                            event_data = self.get_event_data(img_index, event_name)
+                            result_list.append(event_data)
+                            logger.debug("Comparing %s point end %s" % (event_name, time.strftime("%c")))
+                            # shift one index to avoid boundary matching two events at the same time
+                            if forward_search:
+                                start_index = img_index - 1
+                                end_index = min(self.search_range[3] - 1, start_index + total_search_range)
+                            else:
+                                start_index = img_index + 1
+                                end_index = max(self.search_range[0], start_index - total_search_range)
+                            search_count = 0
+                            break
                     else:
-                        img_index -= 1
+                        if forward_search:
+                            img_index += 1
+                        else:
+                            img_index -= 1
+            elif metric_type == 'ail':
+                target_index = start_index
+                ssim_value = 0
+                if forward_search:
+                    for i in range(start_index, end_index):
+                        image_data = self.image_list[i]
+                        img_fp = os.path.join(os.path.dirname(image_data['image_fp']), search_target,
+                                              os.path.basename(image_data['image_fp']))
+                        current_ssim = compute_ssim(sample_dct, img_fp)
+                        if (current_ssim - ssim_value) > 0.0005:
+                            ssim_value = current_ssim
+                            target_index = i
+                else:
+                    for i in range(start_index, end_index, -1):
+                        image_data = self.image_list[i]
+                        img_fp = os.path.join(os.path.dirname(image_data['image_fp']), search_target,
+                                              os.path.basename(image_data['image_fp']))
+                        current_ssim = compute_ssim(sample_dct, img_fp)
+                        if (current_ssim - ssim_value) > 0.0005:
+                            ssim_value = current_ssim
+                            target_index = i
+                event_data = self.get_event_data(target_index, event_name)
+                result_list.append(event_data)
+                logger.debug("Comparing %s point end %s" % (event_name, time.strftime("%c")))
 
-    def parallel_compare_image(self, search_direction, sample_dct_list, result_list):
+    def parallel_compare_image(self, search_direction, sample_dct_list, result_list, metric_type):
         total_search_range = Environment.DEFAULT_VIDEO_RECORDING_FPS * 20
         event_points = Environment.BROWSER_VISUAL_EVENT_POINTS[search_direction]
         if search_direction == 'backward_search':
             start_index = self.search_range[1] - 1
             end_index = max(self.search_range[0], start_index - total_search_range)
         elif search_direction == 'forward_search':
+            # if metric_type == 'pl':
             start_index = self.search_range[2] - 1
             end_index = min(self.search_range[3] - 1, start_index + total_search_range)
+            # elif metric_type == 'ail':
+            #    start_index = self.search_range[0] - 1
+            #    end_index = min(self.search_range[3] - 1, start_index + total_search_range)
         else:
             start_index = 0
             end_index = 0
-        self.sequential_compare_image(start_index, end_index, total_search_range, event_points, sample_dct_list, result_list)
+        self.sequential_compare_image(start_index, end_index, total_search_range, event_points, sample_dct_list, result_list, metric_type)
 
     def compare_two_images(self, dct_obj_1, dct_obj_2):
         match = False
@@ -767,7 +842,7 @@ class ImageTool(object):
                         'height': viewport['y'] + viewport['height'] - tab_view['y']}
         return browser_view
 
-    def colors_are_similar(self, a, b, threshold=30):
+    def colors_are_similar(self, a, b, threshold=60):
         similar = True
         sum = 0
         for x in xrange(3):
