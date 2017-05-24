@@ -7,7 +7,7 @@ class TestSikuli(PerfBaseTest):
         super(TestSikuli, self).setUp()
         self.set_configs(self.config_name.INDEX,
                          self.extract_platform_dep_settings(
-                             {'win32': {'7': {'search-margin': 2, 'compare-threshold': 0.006},
+                             {'win32': {'7': {'search-margin': 2, 'compare-threshold': 0.0063},
                                         '10': {'search-margin': 2, 'compare-threshold': 0.006}}}))
 
     def test_chrome_amazon_ail_type_in_search_field(self):

@@ -42,7 +42,7 @@ sleep(2)
 
 # PRE ACTIONS
 app.click_search_field()
-sleep(1)
+sleep(2)
 
 # Record T1, and capture the snapshot image
 # Input Latency Action
